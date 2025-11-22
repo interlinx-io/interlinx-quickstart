@@ -129,7 +129,15 @@ prompt_for_token() {
         echo ""
         echo "Create a PAT at: https://github.com/settings/tokens"
         echo ""
-        read -s -p "Enter your GitHub PAT: " GITHUB_TOKEN
+
+        # Read from /dev/tty to support piped script execution
+        if [[ -t 0 ]]; then
+            # stdin is a terminal
+            read -s -p "Enter your GitHub PAT: " GITHUB_TOKEN
+        else
+            # stdin is redirected (piped script), read from terminal directly
+            read -s -p "Enter your GitHub PAT: " GITHUB_TOKEN < /dev/tty
+        fi
         echo ""
 
         if [[ -z "$GITHUB_TOKEN" ]]; then
