@@ -110,7 +110,7 @@ check_root() {
 check_dependencies() {
     local missing_deps=()
 
-    for cmd in curl tar sha256sum; do
+    for cmd in curl tar sha256sum jq; do
         if ! command -v "$cmd" &> /dev/null; then
             missing_deps+=("$cmd")
         fi
@@ -182,11 +182,16 @@ get_asset_id() {
         error "Version $VERSION not found in repository"
     fi
 
-    # Extract asset ID for the given filename
+    # Extract asset ID for the given filename using jq
     local asset_id
-    asset_id=$(echo "$response" | grep -A 3 "\"name\": \"$asset_name\"" | grep '"id":' | head -1 | sed -E 's/.*"id": *([0-9]+).*/\1/')
+    if command -v jq &> /dev/null; then
+        asset_id=$(echo "$response" | jq -r ".assets[] | select(.name == \"$asset_name\") | .id")
+    else
+        # Fallback to grep/sed if jq not available
+        asset_id=$(echo "$response" | grep -B 2 "\"name\": \"$asset_name\"" | grep '"id":' | head -1 | sed -E 's/.*"id": *([0-9]+).*/\1/')
+    fi
 
-    if [[ -z "$asset_id" ]]; then
+    if [[ -z "$asset_id" ]] || [[ "$asset_id" == "null" ]]; then
         error "Asset '$asset_name' not found in release $VERSION"
     fi
 
