@@ -7,6 +7,7 @@ A minimal bootstrap installer script for downloading and extracting the Interlin
 - Root or sudo access
 - Internet connectivity
 - GitHub Personal Access Token with `repo` scope
+- Required commands: `curl`, `tar`, `sha256sum`, `jq`
 
 ## Installation
 
