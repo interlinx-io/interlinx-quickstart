@@ -171,6 +171,28 @@ verify_version_exists() {
     fi
 }
 
+get_asset_id() {
+    local asset_name=$1
+
+    local url="https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${VERSION}"
+    local response
+    response=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "$url" 2>&1)
+
+    if echo "$response" | grep -q '"message": "Not Found"'; then
+        error "Version $VERSION not found in repository"
+    fi
+
+    # Extract asset ID for the given filename
+    local asset_id
+    asset_id=$(echo "$response" | grep -A 3 "\"name\": \"$asset_name\"" | grep '"id":' | head -1 | sed -E 's/.*"id": *([0-9]+).*/\1/')
+
+    if [[ -z "$asset_id" ]]; then
+        error "Asset '$asset_name' not found in release $VERSION"
+    fi
+
+    echo "$asset_id"
+}
+
 download_file() {
     local url=$1
     local output=$2
@@ -321,16 +343,25 @@ main() {
         verify_version_exists
     fi
 
-    # Construct URLs
+    # Construct filenames
     local filename="interlinx-controller-${VERSION}-${ARCH}.tar.gz"
-    local base_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}"
-    local tarball_url="${base_url}/${filename}"
-    local checksum_url="${tarball_url}.sha256"
+    local checksum_filename="${filename}.sha256"
+
+    # Get asset IDs from GitHub API
+    info "Fetching release assets..."
+    local tarball_asset_id
+    local checksum_asset_id
+    tarball_asset_id=$(get_asset_id "$filename")
+    checksum_asset_id=$(get_asset_id "$checksum_filename")
+
+    # Construct API URLs for private repo asset downloads
+    local tarball_url="https://api.github.com/repos/${GITHUB_REPO}/releases/assets/${tarball_asset_id}"
+    local checksum_url="https://api.github.com/repos/${GITHUB_REPO}/releases/assets/${checksum_asset_id}"
 
     # Create temporary directory
     TEMP_DIR=$(mktemp -d)
     local tarball_path="${TEMP_DIR}/${filename}"
-    local checksum_path="${tarball_path}.sha256"
+    local checksum_path="${TEMP_DIR}/${checksum_filename}"
 
     # Download files
     download_file "$tarball_url" "$tarball_path" "controller tarball"
