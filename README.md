@@ -1,12 +1,11 @@
-# Interlinx Controller - Bootstrap Installer
+# Interlinx Controller & Agent - Bootstrap Installer
 
-A minimal bootstrap installer script for downloading and extracting the Interlinx Controller standalone release.
+A minimal bootstrap installer script for downloading and extracting the Interlinx Controller standalone release and the Interlinx Agent.
 
 ## Prerequisites
 
 - Root or sudo access
 - Internet connectivity
-- GitHub Personal Access Token with `repo` scope
 - Required commands: `curl`, `tar`, `sha256sum`, `jq`
 
 ## Installation
@@ -17,7 +16,7 @@ A minimal bootstrap installer script for downloading and extracting the Interlin
 curl -fsSL https://raw.githubusercontent.com/interlinx-io/interlinx-quickstart/main/install.sh | sudo bash
 ```
 
-You will be prompted to enter your GitHub Personal Access Token.
+You will be prompted for authentication when accessing private repositories.
 
 ### Alternative: Download First
 
@@ -30,37 +29,41 @@ sudo ./install.sh
 ### Non-Interactive (Automation)
 
 ```bash
-sudo ./install.sh --token ghp_your_token_here
+sudo ./install.sh --token <your-token>
 ```
 
-### Install Specific Version
+### Install Specific Versions
 
 ```bash
-sudo ./install.sh --version v1.4.0 --token ghp_your_token_here
+# Specify controller version only
+sudo ./install.sh --controller-version v1.4.0 --token <your-token>
+
+# Specify both controller and agent versions
+sudo ./install.sh --controller-version v1.4.0 --agent-version v1.0.0 --token <your-token>
+
+# Specify agent version only (controller will use latest)
+sudo ./install.sh --agent-version v1.0.0 --token <your-token>
 ```
 
 ## Options
 
 | Option | Description |
 |--------|-------------|
-| `--token <token>` | GitHub Personal Access Token for authentication |
-| `--version <ver>` | Specific version to install (default: latest) |
+| `--token <token>` | Authentication token for private repositories |
+| `--controller-version <ver>` | Specific controller version to install (default: latest) |
+| `--agent-version <ver>` | Specific agent version to install (default: latest) |
 | `--help` | Display help message |
-
-## GitHub Personal Access Token
-
-Create a token at: https://github.com/settings/tokens
-
-Required scope: `repo` or `repo:private_repo`
 
 ## What It Does
 
 1. Validates prerequisites
-2. Authenticates with GitHub using your PAT
-3. Downloads the latest release (or specified version)
-4. Verifies SHA256 checksum
-5. Extracts the controller
-6. Displays next steps
+2. Authenticates for private repository access
+3. Downloads the controller release (or specified version)
+4. Verifies SHA256 checksum for the controller
+5. Extracts the controller to `/opt/interlinx-controller-<version>/`
+6. Downloads the agent release (or specified version)
+7. Saves the agent as `agent-<version>-linux.run` (executable) in the current directory
+8. Displays next steps
 
 ## Support
 

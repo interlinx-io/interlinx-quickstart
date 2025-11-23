@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
 
 #
-# Interlinx Controller Bootstrap Installer
+# Interlinx Controller & Agent Bootstrap Installer
 #
 # Downloads and extracts the Interlinx Controller standalone release
-# from the private GitHub repository.
+# and optionally the Interlinx Agent from private GitHub repositories.
 #
 # Usage:
 #   ./install.sh [options]
 #
 # Options:
-#   --token <pat>      GitHub Personal Access Token for authentication
-#   --version <ver>    Specific version to install (default: latest)
-#   --help             Display this help message
+#   --token <pat>              GitHub Personal Access Token for authentication
+#   --controller-version <ver> Specific controller version to install (default: latest)
+#   --agent-version <ver>      Specific agent version to install (default: latest)
+#   --help                     Display this help message
 #
 
 set -e
 set -o pipefail
 
 # Configuration
-GITHUB_REPO="interlinx-io/interlinx-controller"
+CONTROLLER_REPO="interlinx-io/interlinx-controller"
+AGENT_REPO="interlinx-io/downloads"
 INSTALL_DIR="/opt"
 ARCH="linux-x64"
 
@@ -31,7 +33,8 @@ NC='\033[0m' # No Color
 
 # Variables
 GITHUB_TOKEN=""
-VERSION=""
+CONTROLLER_VERSION=""
+AGENT_VERSION=""
 QUIET=false
 
 # Functions
@@ -50,21 +53,24 @@ info() {
 
 usage() {
     cat << EOF
-Interlinx Controller Bootstrap Installer
+Interlinx Controller & Agent Bootstrap Installer
 
-Downloads and extracts the Interlinx Controller from the private GitHub repository.
+Downloads the Interlinx Controller and Agent from private GitHub repositories.
 
 USAGE:
     ./install.sh [OPTIONS]
 
 OPTIONS:
-    --token <token>     GitHub Personal Access Token (PAT) for authentication
-                        If not provided, will prompt interactively
+    --token <token>              GitHub Personal Access Token (PAT) for authentication
+                                 If not provided, will prompt interactively
 
-    --version <ver>     Specific version to install (e.g., v1.4.0)
-                        Default: latest release
+    --controller-version <ver>   Specific controller version to install (e.g., v1.4.0)
+                                 Default: latest release
 
-    --help              Display this help message and exit
+    --agent-version <ver>        Specific agent version to install (e.g., v1.0.0)
+                                 Default: latest release
+
+    --help                       Display this help message and exit
 
 EXAMPLES:
     # Interactive mode (prompts for PAT)
@@ -73,8 +79,8 @@ EXAMPLES:
     # Non-interactive with token
     sudo ./install.sh --token ghp_xxxxxxxxxxxx
 
-    # Specific version
-    sudo ./install.sh --version v1.4.0 --token ghp_xxxxxxxxxxxx
+    # Specific versions
+    sudo ./install.sh --controller-version v1.4.0 --agent-version v1.0.0 --token ghp_xxxxxxxxxxxx
 
     # Download and run in one command
     curl -fsSL https://raw.githubusercontent.com/interlinx-io/interlinx-quickstart/main/install.sh | sudo bash
@@ -94,6 +100,9 @@ GITHUB PAT REQUIREMENTS:
 INSTALLATION:
     The controller will be extracted to:
         ${INSTALL_DIR}/interlinx-controller-vX.X.X/
+
+    The agent will be downloaded to the current directory as:
+        agent-vX.X.X-linux.run
 
     After extraction, follow the displayed next steps to complete installation.
 
@@ -147,11 +156,14 @@ prompt_for_token() {
 }
 
 get_latest_version() {
-    info "Fetching latest release version..."
+    local repo=$1
+    local version_var_name=$2
+
+    info "Fetching latest release version for $repo..."
 
     local response
     response=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-        "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>&1)
+        "https://api.github.com/repos/${repo}/releases/latest" 2>&1)
 
     local http_code=$(echo "$response" | grep -o '"message":' | wc -l)
 
@@ -160,34 +172,46 @@ get_latest_version() {
     elif echo "$response" | grep -q '"message": "Not Found"'; then
         error "Repository not found or token lacks access. Ensure your PAT has 'repo' scope."
     elif echo "$response" | grep -q '"tag_name"'; then
-        VERSION=$(echo "$response" | grep '"tag_name":' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
-        info "Latest version: $VERSION"
+        local version=$(echo "$response" | grep '"tag_name":' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
+        info "Latest version: $version"
+
+        # Set the version variable dynamically
+        if [[ "$version_var_name" == "CONTROLLER_VERSION" ]]; then
+            CONTROLLER_VERSION="$version"
+        elif [[ "$version_var_name" == "AGENT_VERSION" ]]; then
+            AGENT_VERSION="$version"
+        fi
     else
         error "Failed to fetch latest release. Response: $response"
     fi
 }
 
 verify_version_exists() {
-    info "Verifying version $VERSION exists..."
+    local repo=$1
+    local version=$2
 
-    local url="https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${VERSION}"
+    info "Verifying version $version exists in $repo..."
+
+    local url="https://api.github.com/repos/${repo}/releases/tags/${version}"
     local response
     response=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "$url" 2>&1)
 
     if echo "$response" | grep -q '"message": "Not Found"'; then
-        error "Version $VERSION not found in repository"
+        error "Version $version not found in repository $repo"
     fi
 }
 
 get_asset_id() {
-    local asset_name=$1
+    local repo=$1
+    local version=$2
+    local asset_name=$3
 
-    local url="https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${VERSION}"
+    local url="https://api.github.com/repos/${repo}/releases/tags/${version}"
     local response
     response=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "$url" 2>&1)
 
     if echo "$response" | grep -q '"message": "Not Found"'; then
-        error "Version $VERSION not found in repository"
+        error "Version $version not found in repository $repo"
     fi
 
     # Extract asset ID for the given filename using jq
@@ -200,7 +224,7 @@ get_asset_id() {
     fi
 
     if [[ -z "$asset_id" ]] || [[ "$asset_id" == "null" ]]; then
-        error "Asset '$asset_name' not found in release $VERSION"
+        error "Asset '$asset_name' not found in release $version"
     fi
 
     echo "$asset_id"
@@ -276,16 +300,48 @@ extract_tarball() {
     info "Extraction complete"
 }
 
+download_agent() {
+    info "Downloading Interlinx Agent..."
+
+    # Determine version
+    if [[ -z "$AGENT_VERSION" ]]; then
+        get_latest_version "$AGENT_REPO" "AGENT_VERSION"
+    else
+        verify_version_exists "$AGENT_REPO" "$AGENT_VERSION"
+    fi
+
+    # The agent asset is named "agent--linux.run" (no version in filename)
+    local agent_asset_name="agent--linux.run"
+
+    # Get asset ID
+    local agent_asset_id
+    agent_asset_id=$(get_asset_id "$AGENT_REPO" "$AGENT_VERSION" "$agent_asset_name")
+
+    # Construct download URL
+    local agent_url="https://api.github.com/repos/${AGENT_REPO}/releases/assets/${agent_asset_id}"
+
+    # Download to current directory with versioned filename
+    local agent_output="agent-${AGENT_VERSION}-linux.run"
+
+    download_file "$agent_url" "$agent_output" "Interlinx Agent"
+
+    # Make executable
+    chmod +x "$agent_output"
+    info "Agent downloaded to: $agent_output (executable)"
+}
+
 show_next_steps() {
     local installed_dir=$1
+    local agent_file=$2
 
     cat << EOF
 
 ============================================
-Interlinx Controller downloaded successfully!
+Interlinx Controller & Agent downloaded successfully!
 ============================================
 
-Location: ${installed_dir}
+Controller Location: ${installed_dir}
+Agent Location: ${agent_file}
 
 Next Steps:
 1. Navigate to the installation directory:
@@ -326,8 +382,18 @@ main() {
                 GITHUB_TOKEN="$2"
                 shift 2
                 ;;
+            --controller-version)
+                CONTROLLER_VERSION="$2"
+                shift 2
+                ;;
+            --agent-version)
+                AGENT_VERSION="$2"
+                shift 2
+                ;;
             --version)
-                VERSION="$2"
+                # Support legacy --version flag for controller
+                warn "The --version flag is deprecated. Use --controller-version instead."
+                CONTROLLER_VERSION="$2"
                 shift 2
                 ;;
             --help)
@@ -349,27 +415,27 @@ main() {
     # Get authentication token
     prompt_for_token
 
-    # Determine version
-    if [[ -z "$VERSION" ]]; then
-        get_latest_version
+    # Determine controller version
+    if [[ -z "$CONTROLLER_VERSION" ]]; then
+        get_latest_version "$CONTROLLER_REPO" "CONTROLLER_VERSION"
     else
-        verify_version_exists
+        verify_version_exists "$CONTROLLER_REPO" "$CONTROLLER_VERSION"
     fi
 
     # Construct filenames
-    local filename="interlinx-controller-${VERSION}-${ARCH}.tar.gz"
+    local filename="interlinx-controller-${CONTROLLER_VERSION}-${ARCH}.tar.gz"
     local checksum_filename="${filename}.sha256"
 
     # Get asset IDs from GitHub API
-    info "Fetching release assets..."
+    info "Fetching controller release assets..."
     local tarball_asset_id
     local checksum_asset_id
-    tarball_asset_id=$(get_asset_id "$filename")
-    checksum_asset_id=$(get_asset_id "$checksum_filename")
+    tarball_asset_id=$(get_asset_id "$CONTROLLER_REPO" "$CONTROLLER_VERSION" "$filename")
+    checksum_asset_id=$(get_asset_id "$CONTROLLER_REPO" "$CONTROLLER_VERSION" "$checksum_filename")
 
     # Construct API URLs for private repo asset downloads
-    local tarball_url="https://api.github.com/repos/${GITHUB_REPO}/releases/assets/${tarball_asset_id}"
-    local checksum_url="https://api.github.com/repos/${GITHUB_REPO}/releases/assets/${checksum_asset_id}"
+    local tarball_url="https://api.github.com/repos/${CONTROLLER_REPO}/releases/assets/${tarball_asset_id}"
+    local checksum_url="https://api.github.com/repos/${CONTROLLER_REPO}/releases/assets/${checksum_asset_id}"
 
     # Create temporary directory
     TEMP_DIR=$(mktemp -d)
@@ -387,14 +453,23 @@ main() {
     extract_tarball "$tarball_path"
 
     # Determine installed directory
-    local installed_dir="${INSTALL_DIR}/interlinx-controller-${VERSION}"
+    local installed_dir="${INSTALL_DIR}/interlinx-controller-${CONTROLLER_VERSION}"
 
     if [[ ! -d "$installed_dir" ]]; then
         error "Installation directory not found after extraction: $installed_dir"
     fi
 
+    # Download agent
+    local agent_file="agent-${AGENT_VERSION:-latest}-linux.run"
+    download_agent
+
+    # Update agent_file with actual version after download
+    if [[ -n "$AGENT_VERSION" ]]; then
+        agent_file="agent-${AGENT_VERSION}-linux.run"
+    fi
+
     # Show next steps
-    show_next_steps "$installed_dir"
+    show_next_steps "$installed_dir" "$agent_file"
 
     info "Bootstrap installation complete!"
 }
