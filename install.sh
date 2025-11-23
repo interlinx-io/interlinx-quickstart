@@ -301,7 +301,7 @@ extract_tarball() {
 }
 
 download_agent() {
-    info "Downloading Interlinx Agent..."
+    info "Checking for Interlinx Agent..."
 
     # Determine version
     if [[ -z "$AGENT_VERSION" ]]; then
@@ -309,6 +309,19 @@ download_agent() {
     else
         verify_version_exists "$AGENT_REPO" "$AGENT_VERSION"
     fi
+
+    # Download to current directory with versioned filename
+    local agent_output="agent-${AGENT_VERSION}-linux.run"
+
+    # Check if agent already exists
+    if [[ -f "$agent_output" ]]; then
+        info "Agent already exists: $agent_output (skipping download)"
+        # Ensure it's executable
+        chmod +x "$agent_output"
+        return 0
+    fi
+
+    info "Downloading Interlinx Agent..."
 
     # The agent asset is named "agent--linux.run" (no version in filename)
     local agent_asset_name="agent--linux.run"
@@ -319,9 +332,6 @@ download_agent() {
 
     # Construct download URL
     local agent_url="https://api.github.com/repos/${AGENT_REPO}/releases/assets/${agent_asset_id}"
-
-    # Download to current directory with versioned filename
-    local agent_output="agent-${AGENT_VERSION}-linux.run"
 
     download_file "$agent_url" "$agent_output" "Interlinx Agent"
 
@@ -422,41 +432,48 @@ main() {
         verify_version_exists "$CONTROLLER_REPO" "$CONTROLLER_VERSION"
     fi
 
-    # Construct filenames
-    local filename="interlinx-controller-${CONTROLLER_VERSION}-${ARCH}.tar.gz"
-    local checksum_filename="${filename}.sha256"
-
-    # Get asset IDs from GitHub API
-    info "Fetching controller release assets..."
-    local tarball_asset_id
-    local checksum_asset_id
-    tarball_asset_id=$(get_asset_id "$CONTROLLER_REPO" "$CONTROLLER_VERSION" "$filename")
-    checksum_asset_id=$(get_asset_id "$CONTROLLER_REPO" "$CONTROLLER_VERSION" "$checksum_filename")
-
-    # Construct API URLs for private repo asset downloads
-    local tarball_url="https://api.github.com/repos/${CONTROLLER_REPO}/releases/assets/${tarball_asset_id}"
-    local checksum_url="https://api.github.com/repos/${CONTROLLER_REPO}/releases/assets/${checksum_asset_id}"
-
-    # Create temporary directory
-    TEMP_DIR=$(mktemp -d)
-    local tarball_path="${TEMP_DIR}/${filename}"
-    local checksum_path="${TEMP_DIR}/${checksum_filename}"
-
-    # Download files
-    download_file "$tarball_url" "$tarball_path" "controller tarball"
-    download_file "$checksum_url" "$checksum_path" "checksum file"
-
-    # Verify integrity
-    verify_checksum "$tarball_path" "$checksum_path"
-
-    # Extract
-    extract_tarball "$tarball_path"
-
     # Determine installed directory
     local installed_dir="${INSTALL_DIR}/interlinx-controller-${CONTROLLER_VERSION}"
 
-    if [[ ! -d "$installed_dir" ]]; then
-        error "Installation directory not found after extraction: $installed_dir"
+    # Check if controller is already installed
+    if [[ -d "$installed_dir" ]]; then
+        info "Controller already installed at: $installed_dir (skipping download)"
+    else
+        info "Installing Interlinx Controller..."
+
+        # Construct filenames
+        local filename="interlinx-controller-${CONTROLLER_VERSION}-${ARCH}.tar.gz"
+        local checksum_filename="${filename}.sha256"
+
+        # Get asset IDs from GitHub API
+        info "Fetching controller release assets..."
+        local tarball_asset_id
+        local checksum_asset_id
+        tarball_asset_id=$(get_asset_id "$CONTROLLER_REPO" "$CONTROLLER_VERSION" "$filename")
+        checksum_asset_id=$(get_asset_id "$CONTROLLER_REPO" "$CONTROLLER_VERSION" "$checksum_filename")
+
+        # Construct API URLs for private repo asset downloads
+        local tarball_url="https://api.github.com/repos/${CONTROLLER_REPO}/releases/assets/${tarball_asset_id}"
+        local checksum_url="https://api.github.com/repos/${CONTROLLER_REPO}/releases/assets/${checksum_asset_id}"
+
+        # Create temporary directory
+        TEMP_DIR=$(mktemp -d)
+        local tarball_path="${TEMP_DIR}/${filename}"
+        local checksum_path="${TEMP_DIR}/${checksum_filename}"
+
+        # Download files
+        download_file "$tarball_url" "$tarball_path" "controller tarball"
+        download_file "$checksum_url" "$checksum_path" "checksum file"
+
+        # Verify integrity
+        verify_checksum "$tarball_path" "$checksum_path"
+
+        # Extract
+        extract_tarball "$tarball_path"
+
+        if [[ ! -d "$installed_dir" ]]; then
+            error "Installation directory not found after extraction: $installed_dir"
+        fi
     fi
 
     # Download agent
