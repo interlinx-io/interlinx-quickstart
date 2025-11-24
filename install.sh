@@ -337,6 +337,12 @@ download_agent() {
 
     # Make executable
     chmod +x "$agent_output"
+
+    # Change ownership to the user who ran sudo (if applicable)
+    if [[ -n "$SUDO_USER" ]]; then
+        chown "$SUDO_USER:$SUDO_USER" "$agent_output"
+    fi
+
     info "Agent downloaded to: $agent_output (executable)"
 }
 
